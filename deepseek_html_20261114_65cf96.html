@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2048</title>
+<style>
+  body{background:#faf8ef;color:#776e65;font-family:Arial,sans-serif;
+       display:flex;flex-direction:column;align-items:center;padding:16px;user-select:none}
+  h1{margin:0 0 8px;font-size:28px}
+  #hud{display:flex;gap:12px;margin-bottom:10px;font-size:16px}
+  .box{background:#bbada0;color:#fff;padding:6px 14px;border-radius:6px;text-align:center}
+  .box b{display:block;font-size:20px}
+  #board{background:#bbada0;border-radius:8px;padding:8px;display:grid;
+         grid-template-columns:repeat(4,72px);gap:8px}
+  .cell{width:72px;height:72px;border-radius:6px;background:#cdc1b4;
+        display:flex;align-items:center;justify-content:center;
+        font-size:28px;font-weight:bold}
+  .n2{background:#eee4da}.n4{background:#ede0c8}
+  .n8{background:#f2b179;color:#fff}.n16{background:#f59563;color:#fff}
+  .n32{background:#f67c5f;color:#fff}.n64{background:#f65e3b;color:#fff}
+  .n128{background:#edcf72;color:#fff;font-size:24px}
+  .n256{background:#edcc61;color:#fff;font-size:24px}
+  .n512{background:#edc850;color:#fff;font-size:24px}
+  .n1024{background:#edc53f;color:#fff;font-size:20px}
+  .n2048{background:#edc22e;color:#fff;font-size:20px}
+  .nbig{background:#3c3a32;color:#fff;font-size:16px}
+  #msg{margin-top:10px;font-size:16px;min-height:22px;color:#c33}
+  #pad{margin-top:12px;display:grid;grid-template-columns:repeat(3,56px);gap:6px}
+  #pad button{height:48px;font-size:20px;border:0;border-radius:6px;
+              background:#8f7a66;color:#fff;cursor:pointer}
+  #pad .sp{visibility:hidden}
+  #reset{margin-top:12px;padding:8px 20px;font-size:15px;border:0;
+         border-radius:6px;background:#8f7a66;color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>2048</h1>
+<div id="hud">
+  <div class="box">分数<b id="score">0</b></div>
+  <div class="box">最高<b id="best">0</b></div>
+</div>
+<div id="board"></div>
+<div id="msg"></div>
+<div id="pad">
+  <button class="sp"></button>
+  <button onclick="move(0)">↑</button>
+  <button class="sp"></button>
+  <button onclick="move(3)">←</button>
+  <button onclick="move(2)">↓</button>
+  <button onclick="move(1)">→</button>
+</div>
+<button id="reset" onclick="newGame()">重新开始</button>
+
+<script>
+var SIZE = 4;
+var grid = null, score = 0, best = 0, over = false;
+
+function setCookie(n, v, d){
+  try{
+    var e = new Date();
+    e.setTime(e.getTime() + d*864e5);
+    document.cookie = n + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
+  }catch(err){}
+}
+function getCookie(n){
+  try{
+    var m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }catch(err){ return null; }
+}
+
+function save(){
+  try{
+    var a = [];
+    for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){
+      var v = grid[r][c];
+      a.push(v ? Math.round(Math.log(v)/Math.LN2) : 0);
+    }
+    setCookie('g2048_b', a.join(','), 365);
+    setCookie('g2048_s', score, 365);
+    setCookie('g2048_x', best, 365);
+  }catch(err){}
+}
+
+function load(){
+  best = 0;
+  try{
+    var x = getCookie('g2048_x');
+    if(x) best = parseInt(x, 10) || 0;
+    var b = getCookie('g2048_b');
+    if(!b) return false;
+    var a = b.split(',');
+    if(a.length !== SIZE*SIZE) return false;
+    var g = [];
+    for(var r=0;r<SIZE;r++){
+      var row = [];
+      for(var c=0;c<SIZE;c++){
+        var e = parseInt(a[r*SIZE+c], 10) || 0;
+        row.push(e > 0 ? Math.pow(2, e) : 0);
+      }
+      g.push(row);
+    }
+    var s = getCookie('g2048_s');
+    score = s ? (parseInt(s, 10) || 0) : 0;
+    grid = g;
+    over = !canMove();
+    return true;
+  }catch(err){ return false; }
+}
+
+function newGame(){
+  grid = [];
+  for(var r=0;r<SIZE;r++){
+    var row = [];
+    for(var c=0;c<SIZE;c++) row.push(0);
+    grid.push(row);
+  }
+  score = 0;
+  over = false;
+  addTile();
+  addTile();
+  save();
+  render();
+}
+
+function addTile(){
+  var empty = [];
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++)
+    if(grid[r][c] === 0) empty.push([r,c]);
+  if(empty.length === 0) return;
+  var p = empty[Math.floor(Math.random()*empty.length)];
+  grid[p[0]][p[1]] = Math.random() < 0.9 ? 2 : 4;
+}
+
+function slide(row){
+  var a = [], i;
+  for(i=0;i<row.length;i++) if(row[i]) a.push(row[i]);
+  for(i=0;i<a.length-1;i++){
+    if(a[i] === a[i+1]){
+      a[i] *= 2;
+      score += a[i];
+      a.splice(i+1,1);
+    }
+  }
+  while(a.length < SIZE) a.push(0);
+  return a;
+}
+
+function move(dir){
+  if(over || !grid) return;
+  var before = JSON.stringify(grid);
+  var i, r, line;
+  for(i=0;i<SIZE;i++){
+    if(dir === 0){
+      line = [];
+      for(r=0;r<SIZE;r++) line.push(grid[r][i]);
+      line = slide(line);
+      for(r=0;r<SIZE;r++) grid[r][i] = line[r];
+    } else if(dir === 2){
+      line = [];
+      for(r=SIZE-1;r>=0;r--) line.push(grid[r][i]);
+      line = slide(line);
+      for(r=0;r<SIZE;r++) grid[SIZE-1-r][i] = line[r];
+    } else if(dir === 3){
+      grid[i] = slide(grid[i].slice());
+    } else if(dir === 1){
+      line = grid[i].slice().reverse();
+      line = slide(line).reverse();
+      grid[i] = line;
+    }
+  }
+  if(JSON.stringify(grid) !== before){
+    addTile();
+    if(score > best) best = score;
+    if(!canMove()) over = true;
+    save();
+  }
+  render();
+}
+
+function canMove(){
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){
+    if(!grid[r][c]) return true;
+    if(c<SIZE-1 && grid[r][c] === grid[r][c+1]) return true;
+    if(r<SIZE-1 && grid[r][c] === grid[r+1][c]) return true;
+  }
+  return false;
+}
+
+function render(){
+  var board = document.getElementById('board');
+  board.innerHTML = '';
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){
+    var v = grid[r][c];
+    var d = document.createElement('div');
+    d.className = 'cell';
+    if(v){
+      d.textContent = v;
+      d.className += (v <= 2048) ? (' n' + v) : ' nbig';
+    }
+    board.appendChild(d);
+  }
+  document.getElementById('score').textContent = score;
+  document.getElementById('best').textContent = best;
+  document.getElementById('msg').textContent = over ? '游戏结束！' : '';
+}
+
+document.addEventListener('keydown', function(e){
+  var map = {ArrowUp:0, ArrowRight:1, ArrowDown:2, ArrowLeft:3,
+             w:0, d:1, s:2, a:3, W:0, D:1, S:2, A:3};
+  if(e.key in map){ e.preventDefault(); move(map[e.key]); }
+});
+
+var tx = 0, ty = 0;
+document.addEventListener('touchstart', function(e){
+  tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+}, {passive:true});
+document.addEventListener('touchend', function(e){
+  var dx = e.changedTouches[0].clientX - tx;
+  var dy = e.changedTouches[0].clientY - ty;
+  if(Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+  if(Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : 3);
+  else move(dy > 0 ? 2 : 0);
+}, {passive:true});
+
+/* 启动 */
+if(!load()) newGame();
+else render();
+</script>
+</body>
+</html>
